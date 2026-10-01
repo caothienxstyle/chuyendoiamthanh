@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whisper Audio → Text</title>
+<style>
+*{box-sizing:border-box}
+body{
+    margin:0;
+    min-height:100vh;
+    font-family:Arial,Helvetica,sans-serif;
+    background:#0b111b;
+    color:#fff;
+    display:flex;
+    justify-content:center;
+    padding:40px 20px;
+}
+.container{width:100%;max-width:850px}
+h1{text-align:center;margin:0 0 8px;font-size:38px}
+.subtitle{text-align:center;color:#8f9bad;margin-bottom:28px}
+.card{
+    background:#141d2a;
+    border:1px solid #2a394d;
+    border-radius:18px;
+    padding:28px;
+}
+.drop{
+    border:2px dashed #40536c;
+    border-radius:15px;
+    padding:50px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:.2s;
+}
+.drop:hover,.drop.drag{border-color:#5ea7ff;background:#101d2d}
+.icon{font-size:48px;margin-bottom:12px}
+.drop h2{margin:0 0 8px}
+.drop p{color:#8f9bad}
+input[type=file]{display:none}
+.btn{
+    border:0;
+    border-radius:10px;
+    padding:12px 18px;
+    background:#5ea7ff;
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
+}
+.file{
+    display:none;
+    margin-top:18px;
+    padding:15px;
+    background:#0d1521;
+    border-radius:10px;
+}
+.file-name{word-break:break-all}
+audio{width:100%;margin-top:12px}
+.controls{
+    display:flex;
+    gap:10px;
+    margin-top:18px;
+    flex-wrap:wrap;
+}
+select,.secondary{
+    background:#172233;
+    color:#fff;
+    border:1px solid #35465c;
+    border-radius:9px;
+    padding:11px 12px;
+}
+.convert{
+    flex:1;
+    min-width:200px;
+}
+.convert:disabled{opacity:.5;cursor:not-allowed}
+.status{
+    display:none;
+    margin-top:20px;
+    padding:14px;
+    background:#101a29;
+    border-radius:10px;
+    color:#aebbd0;
+}
+.result{display:none;margin-top:28px}
+.result-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+}
+textarea{
+    width:100%;
+    min-height:320px;
+    resize:vertical;
+    background:#0b131f;
+    color:#eaf0f7;
+    border:1px solid #304158;
+    border-radius:10px;
+    padding:16px;
+    font-size:16px;
+    line-height:1.65;
+    outline:none;
+}
+.error{
+    display:none;
+    margin-top:16px;
+    padding:12px;
+    color:#ffaaaa;
+    background:#2a1518;
+    border:1px solid #5a272c;
+    border-radius:9px;
+}
+.footer{text-align:center;color:#66758a;font-size:13px;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Audio <span style="color:#5ea7ff">→</span> Text</h1>
+    <div class="subtitle">Whisper chạy trực tiếp trên máy của bạn</div>
+
+    <div class="card">
+        <div class="drop" id="drop">
+            <div class="icon">🎙️</div>
+            <h2>Kéo file âm thanh vào đây</h2>
+            <p>hoặc bấm để chọn file</p>
+            <span class="btn">Chọn file</span>
+            <input id="file" type="file"
+                accept=".mp3,.wav,.m4a,.mp4,.webm,.ogg,.flac,.aac,.wma,audio/*,video/*">
+        </div>
+
+        <div class="file" id="fileBox">
+            <div class="file-name" id="fileName"></div>
+            <audio id="player" controls></audio>
+        </div>
+
+        <div class="controls">
+            <select id="language">
+                <option value="auto">Tự động nhận diện ngôn ngữ</option>
+                <option value="vi">Tiếng Việt</option>
+                <option value="en">English</option>
+            </select>
+
+            <button class="btn convert" id="convert" disabled>
+                Chuyển sang văn bản
+            </button>
+        </div>
+
+        <div class="status" id="status">
+            Đang xử lý bằng Whisper... Việc này có thể mất một lúc tùy độ dài file.
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="result" id="result">
+            <div class="result-top">
+                <strong>Văn bản</strong>
+                <div>
+                    <button class="secondary" id="copy">Sao chép</button>
+                    <button class="secondary" id="download">Tải TXT</button>
+                </div>
+            </div>
+            <textarea id="text" placeholder="Kết quả sẽ xuất hiện ở đây..."></textarea>
+        </div>
+    </div>
+
+    <div class="footer">Local Whisper Tool</div>
+</div>
+
+<script>
+const drop = document.getElementById("drop");
+const fileInput = document.getElementById("file");
+const fileBox = document.getElementById("fileBox");
+const fileName = document.getElementById("fileName");
+const player = document.getElementById("player");
+const convert = document.getElementById("convert");
+const language = document.getElementById("language");
+const status = document.getElementById("status");
+const errorBox = document.getElementById("error");
+const result = document.getElementById("result");
+const text = document.getElementById("text");
+
+let selectedFile = null;
+
+drop.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+drop.addEventListener("dragover", e => {
+    e.preventDefault();
+    drop.classList.add("drag");
+});
+
+drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+
+drop.addEventListener("drop", e => {
+    e.preventDefault();
+    drop.classList.remove("drag");
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+
+function setFile(file) {
+    selectedFile = file;
+    fileName.textContent = file.name;
+    player.src = URL.createObjectURL(file);
+    fileBox.style.display = "block";
+    convert.disabled = false;
+    result.style.display = "none";
+    hideError();
+}
+
+convert.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    const form = new FormData();
+    form.append("audio", selectedFile);
+    form.append("language", language.value);
+
+    convert.disabled = true;
+    status.style.display = "block";
+    result.style.display = "none";
+    hideError();
+
+    try {
+        const response = await fetch("/transcribe", {
+            method: "POST",
+            body: form
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || "Có lỗi xảy ra.");
+        }
+
+        text.value = data.text || "";
+        result.style.display = "block";
+
+    } catch (err) {
+        showError(err.message);
+    } finally {
+        convert.disabled = false;
+        status.style.display = "none";
+    }
+});
+
+document.getElementById("copy").addEventListener("click", async () => {
+    if (!text.value) return;
+    await navigator.clipboard.writeText(text.value);
+    const btn = document.getElementById("copy");
+    btn.textContent = "Đã sao chép";
+    setTimeout(() => btn.textContent = "Sao chép", 1500);
+});
+
+document.getElementById("download").addEventListener("click", () => {
+    if (!text.value) return;
+    const blob = new Blob([text.value], {
+        type: "text/plain;charset=utf-8"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "transcript.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+});
+
+function showError(message) {
+    errorBox.textContent = message;
+    errorBox.style.display = "block";
+}
+
+function hideError() {
+    errorBox.textContent = "";
+    errorBox.style.display = "none";
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+**/audio-to-text-whisper/.venv/
+**/.venv/
+**/__pycache__/
+*.pyc
